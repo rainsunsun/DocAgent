@@ -26,6 +26,14 @@ class Settings:
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "512"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "64"))
 
+    # ---- LLM 可靠性 ----
+    llm_timeout: float = float(os.getenv("LLM_TIMEOUT", "60"))
+    llm_max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "3"))
+    llm_backoff_base: float = float(os.getenv("LLM_BACKOFF_BASE", "1.0"))
+
+    # ---- Agent 改写（语义漂移门控）----
+    rewrite_min_similarity: float = float(os.getenv("REWRITE_MIN_SIMILARITY", "0.5"))
+
 
 settings = Settings()
 

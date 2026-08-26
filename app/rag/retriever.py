@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import importlib.util
+import threading
 from dataclasses import dataclass
 
 from rank_bm25 import BM25Okapi
@@ -36,6 +37,7 @@ class HybridRetriever:
         self._chunks: list[Chunk] = []
         self._vectors = None  # numpy 后端用的归一化向量矩阵
         self._use_milvus = _milvus_lite_available()
+        self._lock = threading.Lock()  # 保护 ingest 与 query 并发时的共享可变状态
         if self._use_milvus:
             from pymilvus import MilvusClient
 
@@ -56,34 +58,36 @@ class HybridRetriever:
         """写入 chunk 向量，并构建 BM25 稀疏索引。"""
         if not chunks:
             return
-        self._chunks = chunks
-        # 中文用 jieba 分词、英文/数字保持整体，否则 BM25 对中文完全失效
-        self._bm25 = BM25Okapi([tokenize(c.text) for c in chunks])
-        if self._use_milvus:
-            self._ensure_collection(len(vectors[0]))
-            rows = [
-                {
-                    "id": i,
-                    "vector": vectors[i],
-                    "text": c.text,
-                    "source": c.source,
-                    "chunk_index": c.chunk_index,
-                }
-                for i, c in enumerate(chunks)
-            ]
-            self.client.insert(collection_name=self.collection, data=rows)
-        else:
-            import numpy as np
+        with self._lock:
+            self._chunks = chunks
+            # 中文用 jieba 分词、英文/数字保持整体，否则 BM25 对中文完全失效
+            self._bm25 = BM25Okapi([tokenize(c.text) for c in chunks])
+            if self._use_milvus:
+                self._ensure_collection(len(vectors[0]))
+                rows = [
+                    {
+                        "id": i,
+                        "vector": vectors[i],
+                        "text": c.text,
+                        "source": c.source,
+                        "chunk_index": c.chunk_index,
+                    }
+                    for i, c in enumerate(chunks)
+                ]
+                self.client.insert(collection_name=self.collection, data=rows)
+            else:
+                import numpy as np
 
-            self._vectors = np.asarray(vectors, dtype="float32")
+                self._vectors = np.asarray(vectors, dtype="float32")
 
     def reset(self) -> None:
         """清空向量库，便于重复评测时保持 doc id 对齐。"""
-        if self._use_milvus and self.client.has_collection(self.collection):
-            self.client.drop_collection(self.collection)
-        self._chunks = []
-        self._bm25 = None
-        self._vectors = None
+        with self._lock:
+            if self._use_milvus and self.client.has_collection(self.collection):
+                self.client.drop_collection(self.collection)
+            self._chunks = []
+            self._bm25 = None
+            self._vectors = None
 
     def _dense(self, query_vec: list[float], n: int) -> dict[int, float]:
         if self._use_milvus:
@@ -122,13 +126,14 @@ class HybridRetriever:
         return sorted(fused.items(), key=lambda x: -x[1])
 
     def retrieve(self, query: str, query_vec: list[float], top_k: int = 6) -> list[RetrievedDoc]:
-        dense = self._dense(query_vec, top_k * 2)
-        sparse = self._sparse(query, top_k * 2)
-        ranked = self._rrf(dense, sparse)[:top_k]
-        docs: list[RetrievedDoc] = []
-        for idx, score in ranked:
-            c = self._chunks[idx]
-            docs.append(
-                RetrievedDoc(text=c.text, source=c.source, chunk_index=c.chunk_index, score=round(score, 4))
-            )
-        return docs
+        with self._lock:
+            dense = self._dense(query_vec, top_k * 2)
+            sparse = self._sparse(query, top_k * 2)
+            ranked = self._rrf(dense, sparse)[:top_k]
+            docs: list[RetrievedDoc] = []
+            for idx, score in ranked:
+                c = self._chunks[idx]
+                docs.append(
+                    RetrievedDoc(text=c.text, source=c.source, chunk_index=c.chunk_index, score=round(score, 4))
+                )
+            return docs

@@ -4,6 +4,7 @@ from __future__ import annotations
 from ..config import settings
 from ..llm import chat
 from ..rag import pipeline
+from ..rag.embedder import similarity
 from .state import AgentState
 
 
@@ -12,6 +13,17 @@ def retrieve_node(state: AgentState) -> dict:
     query = state.get("query") or state["question"]
     docs = pipeline.retrieve(query, settings.top_k)
     return {"docs": docs, "query": query}
+
+
+def _is_yes(ans: str) -> bool:
+    """健壮解析 grade 回复：兼容 YES/No/是的/否 及带标点、前后缀。"""
+    a = (ans or "").strip().upper()
+    if a.startswith("YES") or a.startswith("是"):
+        return True
+    if a.startswith("NO") or a.startswith("否") or a.startswith("不"):
+        return False
+    # 兜底：包含 YES 且不含 NO 才算 ok，其余按不足处理（宁可改写，不误判为够）
+    return "YES" in a and "NO" not in a
 
 
 def grade_node(state: AgentState) -> dict:
@@ -27,23 +39,32 @@ def grade_node(state: AgentState) -> dict:
         "如果这些片段足以回答，只回复 YES；否则只回复 NO。"
     )
     try:
-        ans = (chat([{"role": "user", "content": prompt}]) or "").strip().upper()
+        ans = chat([{"role": "user", "content": prompt}], temperature=0.0) or ""
     except RuntimeError:
         return {"grade": "ok"}  # 无 LLM 时跳过判断，直接生成
-    return {"grade": "ok" if ans.startswith("YES") else "rewrite"}
+    return {"grade": "ok" if _is_yes(ans) else "rewrite"}
 
 
 def rewrite_node(state: AgentState) -> dict:
-    """把原始问题改写为更适合检索的查询。"""
+    """把原始问题改写为更适合检索的查询，并做语义漂移门控。"""
     count = state.get("rewrite_count", 0)
+    question = state["question"]
     prompt = (
-        f"把下面的问题改写成一个更具体、更适合检索的查询，只输出查询本身：\n{state['question']}"
+        f"把下面的问题改写成一个更具体、更适合检索的查询，只输出查询本身：\n{question}"
     )
     try:
         new_query = (chat([{"role": "user", "content": prompt}]) or "").strip()
     except RuntimeError:
-        new_query = state["question"]
-    return {"query": new_query, "rewrite_count": count + 1}
+        new_query = question
+
+    # 语义漂移门控：改写结果与原文相似度过低说明越改越偏，弃用、沿用原文。
+    if new_query and new_query != question:
+        try:
+            if similarity(question, new_query, settings.embedding_model) < settings.rewrite_min_similarity:
+                new_query = question
+        except Exception:
+            new_query = question  # embedding 失败时保守起见，不阻塞主流程
+    return {"query": new_query or question, "rewrite_count": count + 1}
 
 
 def generate_node(state: AgentState) -> dict:

@@ -4,23 +4,25 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config import settings
-from .chunker import Chunk, chunk_text, load_document
+from .chunker import chunk_text, load_document
 from .embedder import embed_texts
 from .reranker import rerank
 from .retriever import HybridRetriever, RetrievedDoc
 
 retriever = HybridRetriever(settings.milvus_uri, settings.collection_name)
-_chunks: list[Chunk] = []
 
 
 def ingest_document(path: str) -> int:
-    """加载文档 -> 分块 -> embedding -> 入库，返回块数。"""
-    global _chunks
+    """加载文档 -> 分块 -> embedding -> 入库，返回块数。
+
+    当前语义：入库会重建整个索引（单文档场景）。重复入库前先 reset，
+    否则 Milvus 主键 id 会重复、残留陈旧向量，检索到过时内容。
+    """
     text = load_document(Path(path))
     chunks = chunk_text(text, path, settings.chunk_size, settings.chunk_overlap)
     vectors = embed_texts([c.text for c in chunks], settings.embedding_model)
+    retriever.reset()
     retriever.index(chunks, vectors)
-    _chunks = chunks
     return len(chunks)
 
 
