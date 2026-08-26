@@ -1,0 +1,22 @@
+# P1 基础 RAG
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+sentence-transformers
+pymilvus
+rank-bm25
+jieba
+pypdf
+python-docx
+openai
+
+# P2 Agent 层
+langgraph
+langchain-openai
+
+# P3 MCP
+mcp
+
+# 测试
+pytest
