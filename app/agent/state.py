@@ -13,3 +13,5 @@ class AgentState(TypedDict, total=False):
     grade: str
     rewrite_count: int
     answer: str
+    faithfulness: str
+    faithfulness_reason: str

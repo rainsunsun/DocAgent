@@ -26,6 +26,7 @@ def build_graph():
     g.add_node("grade", nodes.grade_node)
     g.add_node("rewrite", nodes.rewrite_node)
     g.add_node("generate", nodes.generate_node)
+    g.add_node("verify", nodes.verify_node)
 
     g.set_entry_point("retrieve")
     g.add_edge("retrieve", "grade")
@@ -35,7 +36,8 @@ def build_graph():
         {"generate": "generate", "rewrite": "rewrite"},
     )
     g.add_edge("rewrite", "retrieve")
-    g.add_edge("generate", END)
+    g.add_edge("generate", "verify")
+    g.add_edge("verify", END)
     return g.compile()
 
 

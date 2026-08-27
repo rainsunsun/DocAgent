@@ -27,6 +27,8 @@ class Source(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: list[Source]
+    faithfulness: str = ""
+    faithfulness_reason: str = ""
 
 
 @app.post("/ingest")
@@ -38,10 +40,15 @@ def ingest(req: IngestRequest) -> dict:
 
 @app.post("/query")
 def query(req: QueryRequest) -> QueryResponse:
-    """检索 + 判断 + 改写 + 带引用生成（LangGraph Agent）。"""
+    """检索 + 判断 + 改写 + 带引用生成 + 忠实度校验（LangGraph Agent）。"""
     result = run_agent(req.question)
     sources = [
         Source(text=d.text, source=d.source, chunk_index=d.chunk_index)
         for d in result.get("docs", [])
     ]
-    return QueryResponse(answer=result["answer"], sources=sources)
+    return QueryResponse(
+        answer=result["answer"],
+        sources=sources,
+        faithfulness=result.get("faithfulness", ""),
+        faithfulness_reason=result.get("faithfulness_reason", ""),
+    )

@@ -84,3 +84,43 @@ def generate_node(state: AgentState) -> dict:
     except RuntimeError as e:
         answer = f"（{e}）检索到 {len(docs)} 个相关片段，请配置 LLM_API_KEY 后重试。"
     return {"answer": answer}
+
+
+def _parse_faithfulness(ans: str) -> tuple[str, str]:
+    """解析审校输出：SUPPORTED / PARTIALLY / UNSUPPORTED（可后跟冒号理由）。"""
+    a = (ans or "").strip()
+    u = a.upper()
+    if u.startswith("SUPPORTED"):
+        return "supported", a
+    if u.startswith("PARTIAL"):
+        return "partial", a
+    if u.startswith("UNSUPPORTED"):
+        return "unsupported", a
+    return "unknown", a
+
+
+def verify_node(state: AgentState) -> dict:
+    """忠实度校验：判断回答中的事实性陈述是否都被检索片段支持。"""
+    answer = state.get("answer", "")
+    docs = state.get("docs", [])
+    if not answer:
+        return {"faithfulness": "n/a", "faithfulness_reason": "无回答"}
+    if not docs:
+        # 无检索片段时 generate 已明确拒答，属于「诚实未编造」
+        return {"faithfulness": "supported", "faithfulness_reason": "无检索片段，回答已拒答，未编造"}
+
+    context = "\n\n".join(f"[{i + 1}] {d.text}" for i, d in enumerate(docs))
+    prompt = (
+        "你是严格的审校员。请判断下面「回答」中的事实性陈述是否都能被「资料」支持，"
+        "尤其注意数字、名称、结论是否在资料中出现。\n\n"
+        f"资料：\n{context}\n\n"
+        f"问题：{state['question']}\n\n"
+        f"回答：\n{answer}\n\n"
+        "只输出一行：SUPPORTED / PARTIALLY / UNSUPPORTED，可选地后跟冒号和一句简短理由（指出哪句不被支持）。"
+    )
+    try:
+        out = chat([{"role": "user", "content": prompt}], temperature=0.0) or ""
+        level, reason = _parse_faithfulness(out)
+    except RuntimeError:
+        return {"faithfulness": "unknown", "faithfulness_reason": "无 LLM，跳过忠实度校验"}
+    return {"faithfulness": level, "faithfulness_reason": reason}
