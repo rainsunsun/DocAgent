@@ -18,6 +18,10 @@ class QueryRequest(BaseModel):
     question: str
 
 
+class DeleteRequest(BaseModel):
+    source: str
+
+
 class Source(BaseModel):
     text: str
     source: str
@@ -52,3 +56,16 @@ def query(req: QueryRequest) -> QueryResponse:
         faithfulness=result.get("faithfulness", ""),
         faithfulness_reason=result.get("faithfulness_reason", ""),
     )
+
+
+@app.get("/documents")
+def documents() -> dict:
+    """列出已入库文档的 source。"""
+    return {"sources": pipeline.list_documents()}
+
+
+@app.post("/delete")
+def delete_doc(req: DeleteRequest) -> dict:
+    """按 source 删除一篇文档并重建索引。"""
+    n = pipeline.delete_document(req.source)
+    return {"status": "ok" if n else "not_found", "removed_chunks": n}

@@ -22,11 +22,15 @@ cp .env.example .env
 # 3. 启动服务
 uvicorn app.main:app --reload
 
-# 4. 入库一篇文档
+# 4. 入库文档（可重复调用，追加到多文档语料）
 curl -X POST localhost:8000/ingest -H "Content-Type: application/json" -d "{\"path\": \"./data/sample.md\"}"
 
-# 5. 提问（P2：Agent 自动判断/改写，回答带 [1][2] 引用）
+# 5. 提问（P2：Agent 自动判断/改写，回答带 [1][2] 引用 + 忠实度校验）
 curl -X POST localhost:8000/query -H "Content-Type: application/json" -d "{\"question\": \"什么是 RAG？\"}"
+
+# 6. 查看已入库文档 / 按 source 删除一篇
+curl localhost:8000/documents
+curl -X POST localhost:8000/delete -H "Content-Type: application/json" -d "{\"source\": \"./data/sample.md\"}"
 ```
 
 > 首次运行会联网下载 embedding / reranker 模型（BGE 系列）。向量库用 **Milvus Lite**（本地文件，无需独立服务）。
