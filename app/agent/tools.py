@@ -7,9 +7,9 @@ from ..rag import pipeline
 
 
 @tool
-def search(query: str) -> str:
+def search(query: str, user_id: str = "default") -> str:
     """在已入库文档中检索与 query 最相关的片段，返回带来源的文本。"""
-    docs = pipeline.retrieve(query, top_k=6)
+    docs = pipeline.retrieve(user_id, query, top_k=6)
     if not docs:
         return "未检索到相关片段。"
     return "\n\n".join(f"[来源 {d.source}#{d.chunk_index}]\n{d.text}" for d in docs)

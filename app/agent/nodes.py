@@ -11,7 +11,8 @@ from .state import AgentState
 def retrieve_node(state: AgentState) -> dict:
     """用当前 query（或原始问题）检索，结果写回 docs。"""
     query = state.get("query") or state["question"]
-    docs = pipeline.retrieve(query, settings.top_k)
+    user_id = state.get("user_id", "default")
+    docs = pipeline.retrieve(user_id, query, settings.top_k)
     return {"docs": docs, "query": query}
 
 

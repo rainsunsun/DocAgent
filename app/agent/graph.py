@@ -44,8 +44,8 @@ def build_graph():
 _graph = None
 
 
-def run(question: str) -> dict:
+def run(question: str, user_id: str = "default") -> dict:
     global _graph
     if _graph is None:
         _graph = build_graph()
-    return _graph.invoke({"question": question, "rewrite_count": 0})
+    return _graph.invoke({"question": question, "user_id": user_id, "rewrite_count": 0})

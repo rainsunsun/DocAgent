@@ -22,16 +22,18 @@ cp .env.example .env
 # 3. 启动服务
 uvicorn app.main:app --reload
 
-# 4. 入库文档（可重复调用，追加到多文档语料）
-curl -X POST localhost:8000/ingest -H "Content-Type: application/json" -d "{\"path\": \"./data/sample.md\"}"
+# 4. 入库文档（可重复调用，追加到该 user 的多文档语料；user_id 隔离不同用户）
+curl -X POST localhost:8000/ingest -H "Content-Type: application/json" -d "{\"path\": \"./data/sample.md\", \"user_id\": \"alice\"}"
 
-# 5. 提问（P2：Agent 自动判断/改写，回答带 [1][2] 引用 + 忠实度校验）
-curl -X POST localhost:8000/query -H "Content-Type: application/json" -d "{\"question\": \"什么是 RAG？\"}"
+# 5. 提问（Agent 自动判断/改写，回答带 [1][2] 引用 + 忠实度校验）
+curl -X POST localhost:8000/query -H "Content-Type: application/json" -d "{\"question\": \"什么是 RAG？\", \"user_id\": \"alice\"}"
 
-# 6. 查看已入库文档 / 按 source 删除一篇
-curl localhost:8000/documents
-curl -X POST localhost:8000/delete -H "Content-Type: application/json" -d "{\"source\": \"./data/sample.md\"}"
+# 6. 查看该用户已入库文档 / 按 source 删除一篇
+curl "localhost:8000/documents?user_id=alice"
+curl -X POST localhost:8000/delete -H "Content-Type: application/json" -d "{\"source\": \"./data/sample.md\", \"user_id\": \"alice\"}"
 ```
+
+> 所有端点都可带 `user_id`（默认 `default`）做**多用户隔离**：每个用户独立的 collection / BM25 / 向量，A 用户的文档不会被 B 检索到。
 
 > 首次运行会联网下载 embedding / reranker 模型（BGE 系列）。向量库用 **Milvus Lite**（本地文件，无需独立服务）。
 

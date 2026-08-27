@@ -8,6 +8,7 @@ from ..rag.retriever import RetrievedDoc
 
 class AgentState(TypedDict, total=False):
     question: str
+    user_id: str
     query: str
     docs: list[RetrievedDoc]
     grade: str

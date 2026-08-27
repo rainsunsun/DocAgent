@@ -12,14 +12,17 @@ app = FastAPI(title="DocAgent", version="0.2.0")
 
 class IngestRequest(BaseModel):
     path: str
+    user_id: str = "default"
 
 
 class QueryRequest(BaseModel):
     question: str
+    user_id: str = "default"
 
 
 class DeleteRequest(BaseModel):
     source: str
+    user_id: str = "default"
 
 
 class Source(BaseModel):
@@ -38,14 +41,14 @@ class QueryResponse(BaseModel):
 @app.post("/ingest")
 def ingest(req: IngestRequest) -> dict:
     """加载文档 -> 分块 -> embedding -> 入库。"""
-    n = pipeline.ingest_document(req.path)
+    n = pipeline.ingest_document(req.user_id, req.path)
     return {"status": "ok", "chunks": n}
 
 
 @app.post("/query")
 def query(req: QueryRequest) -> QueryResponse:
     """检索 + 判断 + 改写 + 带引用生成 + 忠实度校验（LangGraph Agent）。"""
-    result = run_agent(req.question)
+    result = run_agent(req.question, req.user_id)
     sources = [
         Source(text=d.text, source=d.source, chunk_index=d.chunk_index)
         for d in result.get("docs", [])
@@ -59,13 +62,13 @@ def query(req: QueryRequest) -> QueryResponse:
 
 
 @app.get("/documents")
-def documents() -> dict:
-    """列出已入库文档的 source。"""
-    return {"sources": pipeline.list_documents()}
+def documents(user_id: str = "default") -> dict:
+    """列出该用户已入库文档的 source。"""
+    return {"sources": pipeline.list_documents(user_id)}
 
 
 @app.post("/delete")
 def delete_doc(req: DeleteRequest) -> dict:
     """按 source 删除一篇文档并重建索引。"""
-    n = pipeline.delete_document(req.source)
+    n = pipeline.delete_document(req.user_id, req.source)
     return {"status": "ok" if n else "not_found", "removed_chunks": n}

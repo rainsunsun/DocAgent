@@ -127,6 +127,8 @@ class HybridRetriever:
 
     def retrieve(self, query: str, query_vec: list[float], top_k: int = 6) -> list[RetrievedDoc]:
         with self._lock:
+            if not self._chunks:  # 空索引直接返回，避免 _vectors/_bm25 为 None 时崩溃
+                return []
             dense = self._dense(query_vec, top_k * 2)
             sparse = self._sparse(query, top_k * 2)
             ranked = self._rrf(dense, sparse)[:top_k]
