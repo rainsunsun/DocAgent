@@ -59,6 +59,19 @@ def ingest_document(user_id: str, path: str) -> int:
     return len(chunks)
 
 
+def ingest_chunks(
+    user_id: str,
+    chunks: list[Chunk],
+    vectors: list[list[float]],
+    source: str = "eval",
+) -> int:
+    """直接入库已分块/向量化的内容（供评估/测试用），返回块数。"""
+    with _lock:
+        _documents.setdefault(user_id, {})[source] = (chunks, vectors)
+        _rebuild_index(user_id)
+    return len(chunks)
+
+
 def delete_document(user_id: str, source: str) -> int:
     """按 source 删除该用户一篇文档并重建索引，返回删除块数（0 表示不存在）。"""
     with _lock:
