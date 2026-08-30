@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..config import settings
 from ..rag.chunker import Chunk
-from ..rag.embedder import embed_texts
+from ..rag.embedder import embed_texts, similarity
 from ..rag.retriever import HybridRetriever
 
 
@@ -79,6 +79,30 @@ def _citation_validity(answer: str, n_docs: int) -> tuple[int, int]:
     return valid, len(cites)
 
 
+def _strip_citations(answer: str) -> str:
+    """去掉 [n] 引用标记，便于与不含引用的参考答案对齐。"""
+    return re.sub(r"\[\d+\]", "", answer)
+
+
+def _token_f1(ref: str, hyp: str) -> float:
+    """jieba 分词后的词重叠 F1（ROUGE-1 风格），衡量字面一致性。"""
+    import jieba
+
+    r = {t for t in jieba.lcut(ref) if t.strip()}
+    h = {t for t in jieba.lcut(hyp) if t.strip()}
+    if not r or not h:
+        return 0.0
+    inter = len(r & h)
+    p = inter / len(h)
+    rec = inter / len(r)
+    return 2 * p * rec / (p + rec) if p + rec else 0.0
+
+
+def _semantic_score(ref: str, hyp: str) -> float:
+    """参考答案与生成答案的向量余弦相似度，衡量语义一致性。"""
+    return max(0.0, similarity(ref, hyp, settings.embedding_model))
+
+
 def evaluate_answers(set_path: str | Path, user_id: str = "eval") -> dict:
     """端到端答案层评估：对每条查询跑完整 Agent，统计忠实度判定 + 引用有效性。
 
@@ -98,6 +122,8 @@ def evaluate_answers(set_path: str | Path, user_id: str = "eval") -> dict:
 
     verdicts: dict[str, int] = {}
     valid_cites = total_cites = answered = 0
+    semantic_sum = token_f1_sum = 0.0
+    n_gold = 0
     for q in queries:
         r = run(q["query"], user_id=user_id)
         verdicts[r.get("faithfulness", "unknown")] = verdicts.get(r.get("faithfulness", "unknown"), 0) + 1
@@ -107,12 +133,19 @@ def evaluate_answers(set_path: str | Path, user_id: str = "eval") -> dict:
         ans = r.get("answer", "")
         if ans and "无法回答" not in ans and "未在知识库" not in ans:
             answered += 1
+        if "gold" in q and ans:
+            gen = _strip_citations(ans)
+            semantic_sum += _semantic_score(q["gold"], gen)
+            token_f1_sum += _token_f1(q["gold"], gen)
+            n_gold += 1
 
     return {
         "queries": len(queries),
         "answered": answered,
         "faithfulness": verdicts,
         "citation_validity": f"{valid_cites}/{total_cites}",
+        "semantic": round(semantic_sum / n_gold, 3) if n_gold else None,
+        "token_f1": round(token_f1_sum / n_gold, 3) if n_gold else None,
     }
 
 
@@ -126,8 +159,10 @@ def main() -> None:
         print(f"\n端到端答案质量（{n_queries} 条查询，需 LLM）：\n")
         res = evaluate_answers(path)
         print(f"回答数：{res['answered']}/{res['queries']}")
-        print(f"忠实度判定分布：{res['faithfulness']}")
+        print(f"忠实度判定分布（LLM-judge）：{res['faithfulness']}")
         print(f"引用有效性（合法/总）：{res['citation_validity']}")
+        print(f"答案语义相似度（vs 参考答案）：{res['semantic']}")
+        print(f"答案词重叠 F1（vs 参考答案）：{res['token_f1']}")
         return
 
     res = evaluate(path)
