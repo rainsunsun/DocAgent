@@ -7,7 +7,8 @@
 - [x] **P1 基础 RAG**：文档加载 → 分块 → embedding → 混合检索（BM25 + 向量 + RRF）→ 精排
 - [x] **P2 Agent 层**：LangGraph 编排（检索 → 相关性判断 → query 改写重查 → 带引用生成 → 忠实度校验）
 - [ ] **P3 记忆 + MCP**：短期 / 长期记忆 + MCP server 暴露工具
-- [ ] **P4 评估 + 部署**：检索命中率 / 回答忠实度 + Docker 一键起
+- [x] **P4 评估**：检索层 hit@k/MRR + 答案层忠实度/引用/语义相似度（`--answers`）
+- [ ] **P4 部署**：Docker 一键起（已有 Dockerfile + compose，待端到端验证）
 
 ## 快速开始
 
@@ -58,7 +59,7 @@ doc-agent/
 │   │   └── state.py         #   状态定义
 │   ├── mcp/                 # P3：MCP server（待完成）
 │   ├── memory/              # P3：记忆（待完成）
-│   └── eval/                # P4：评估（待完成）
+│   └── eval/                # 评估：检索 hit@k/MRR + 答案忠实度/语义相似度
 ├── docs/
 │   ├── architecture.md      # 架构设计 + 技术选型理由
 │   └── evaluation.md        # 评估方法与指标
@@ -82,12 +83,28 @@ doc-agent/
 
 详见 [docs/architecture.md](docs/architecture.md)。
 
+## 评估
+
+分两层，检索层免 LLM、答案层需 LLM：
+
+```bash
+# 检索层：纯向量 / 纯 BM25 / 混合 三种召回对比 hit@k / MRR
+python -m app.eval.metrics
+
+# 答案层：完整 Agent 跑一遍，统计忠实度、引用有效性、语义相似度、词重叠 F1
+python -m app.eval.metrics --answers   # 需要 LLM_API_KEY
+```
+
+- **检索层**：`data/eval_set.json`（8 篇文档 14 条查询）上对比 dense / sparse / hybrid 的 hit@k、MRR。
+- **答案层**：忠实度由 verify 节点以 LLM-judge 判定（supported/partial/unsupported）；引用有效性抓「引用了不存在的文档」这类幻觉；语义相似度 + 词重叠 F1 是**对固定参考答案打分的确定性指标**，可复现、能进回归。
+- **单元测试**：`pytest tests -q`（40 个用例，含节点 LLM mock），push / PR 由 GitHub Actions 自动跑（CI 只跑单测，评估脚本因需下载模型 / LLM key 保持本地）。
+
 ## 路线图
 
 - **P1**（已实现）基础 RAG 跑通
 - **P2**（已实现）LangGraph Agent：检索 → 相关性判断 → query 改写重查 → 带引用生成
 - **P3** 长期记忆 + MCP server
-- **P4** 评估指标 + 纯 RAG vs RAG+Agent 对比实验 + Docker 一键部署
+- **P4** 评估已落地（检索 + 答案层），待补：纯 RAG vs RAG+Agent 对比实验、Docker 端到端验证
 
 ## 面试能讲的难点
 
@@ -95,3 +112,4 @@ doc-agent/
 2. Agent 怎么决定「检索结果够不够，要不要改写 query 重查」？（grade 节点自省回路）
 3. 引用如何对齐到原文 chunk，避免大模型幻觉？（chunk 级引用）
 4. 怎么判断「回答是否忠实于上下文、是否编造」？（verify 节点忠实度校验，输出 supported/partial/unsupported）
+5. 怎么量化评估？检索层 hit@k/MRR 对比三种召回；答案层忠实度 + 引用有效性 + 语义相似度（对固定参考答案打分，可复现、上 CI）
