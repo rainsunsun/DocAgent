@@ -18,5 +18,11 @@ langchain-openai
 # P3 MCP
 mcp
 
+# 数据分析（DuckDB 只读查询，嵌入式无服务）
+duckdb
+
+# 短期记忆（Redis 后端，可选：不装则回退进程内 dict）
+redis
+
 # 测试
 pytest

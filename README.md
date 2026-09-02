@@ -1,12 +1,13 @@
-# DocAgent — Agent RAG 问答系统
+# DocAgent — Agent RAG 问答 + 自然语言数据分析系统
 
-> 基于 LangGraph + Milvus 的 Agent RAG 问答系统：Agent 自主判断「检索结果够不够、要不要改写 query 重查」，回答带来源引用，并配套可量化的检索质量评估。
+> 基于 LangGraph + Milvus + DuckDB 的 Agent 系统：既能做知识库问答（Agent 自主判断「检索够不够、要不要改写 query 重查」，回答带引用 + 忠实度校验），也能做自然语言数据分析（查表 → 写只读 SQL → 精确计算 → 下结论），并配套可量化的评估。
 
 ## 当前状态（P1 ✅ / P2 ✅ / P3–P4 待完成）
 
 - [x] **P1 基础 RAG**：文档加载 → 分块 → embedding → 混合检索（BM25 + 向量 + RRF）→ 精排
 - [x] **P2 Agent 层**：LangGraph 编排（检索 → 相关性判断 → query 改写重查 → 带引用生成 → 忠实度校验）
-- [ ] **P3 记忆 + MCP**：短期 / 长期记忆 + MCP server 暴露工具
+- [x] **P3 记忆 + MCP**：短期记忆（进程内 / Redis 双后端）+ MCP server；长期记忆待完成
+- [x] **数据分析 Agent**：DuckDB 只读查询工具（list_tables / sql_query）+ 零售销售数据 + 指标口径知识库
 - [x] **P4 评估**：检索层 hit@k/MRR + 答案层忠实度/引用/语义相似度（`--answers`）
 - [ ] **P4 部署**：Docker 一键起（已有 Dockerfile + compose，待端到端验证）
 
@@ -24,14 +25,18 @@ cp .env.example .env
 uvicorn app.main:app --reload
 
 # 4. 入库文档（可重复调用，追加到该 user 的多文档语料；user_id 隔离不同用户）
-curl -X POST localhost:8000/ingest -H "Content-Type: application/json" -d "{\"path\": \"./data/sample.md\", \"user_id\": \"alice\"}"
+#    路径相对 DOCS_DIR（默认 ./data）解析，只允许该目录内文件，防路径穿越
+curl -X POST localhost:8000/ingest -H "Content-Type: application/json" -d "{\"path\": \"sample.md\", \"user_id\": \"alice\"}"
 
 # 5. 提问（Agent 自动判断/改写，回答带 [1][2] 引用 + 忠实度校验）
 curl -X POST localhost:8000/query -H "Content-Type: application/json" -d "{\"question\": \"什么是 RAG？\", \"user_id\": \"alice\"}"
 
 # 6. 查看该用户已入库文档 / 按 source 删除一篇
 curl "localhost:8000/documents?user_id=alice"
-curl -X POST localhost:8000/delete -H "Content-Type: application/json" -d "{\"source\": \"./data/sample.md\", \"user_id\": \"alice\"}"
+curl -X POST localhost:8000/delete -H "Content-Type: application/json" -d "{\"source\": \"sample.md\", \"user_id\": \"alice\"}"
+
+# 7. 数据分析（Agent 查表 → 写只读 SQL → 精确算，用户无需懂 SQL）
+curl -X POST localhost:8000/agent -H "Content-Type: application/json" -d "{\"question\": \"2025 年全年销售额是多少？\", \"user_id\": \"alice\"}"
 ```
 
 > 所有端点都可带 `user_id`（默认 `default`）做**多用户隔离**：每个用户独立的 collection / BM25 / 向量，A 用户的文档不会被 B 检索到。
@@ -54,16 +59,22 @@ doc-agent/
 │   │   └── pipeline.py      #   共享检索管线（ingest / retrieve）
 │   ├── agent/               # P2：LangGraph 编排 + 带引用生成
 │   │   ├── graph.py         #   状态图
-│   │   ├── nodes.py         #   retrieve / grade / rewrite / generate
-│   │   ├── tools.py         #   工具封装
+│   │   ├── nodes.py         #   retrieve / grade / rewrite / generate / verify
+│   │   ├── react.py         #   ReAct 工具调用循环（含死循环保护）
+│   │   ├── data_engine.py   #   数据分析引擎（DuckDB 只读查询 + SQL 安全校验）
+│   │   ├── memory.py        #   P3：短期记忆（进程内 / Redis 双后端）
+│   │   ├── tools.py         #   工具封装（search / sql_query / calculator 等）
 │   │   └── state.py         #   状态定义
-│   ├── mcp/                 # P3：MCP server（待完成）
-│   ├── memory/              # P3：记忆（待完成）
+│   ├── mcp/                 # P3：MCP server（JSON-RPC over stdio）
 │   └── eval/                # 评估：检索 hit@k/MRR + 答案忠实度/语义相似度
 ├── docs/
 │   ├── architecture.md      # 架构设计 + 技术选型理由
 │   └── evaluation.md        # 评估方法与指标
-├── data/sample.md           # 示例文档
+├── data/
+│   ├── sample.md            # 示例文档（RAG 语料）
+│   ├── metrics.md           # 指标口径（数据分析）
+│   └── sales.csv            # 零售销售数据（数据分析，脚本生成）
+├── scripts/generate_sales.py  # 确定性生成 sales.csv
 ├── tests/                   # 单元测试
 ├── Dockerfile
 └── docker-compose.yml
@@ -79,6 +90,7 @@ doc-agent/
 | Embedding | BGE（bge-m3） | 中文效果好 |
 | 精排 | bge-reranker-v2-m3 | 显著提升检索精度 |
 | LLM | DeepSeek（OpenAI 协议） | 可平滑替换 Qwen / GLM / 本地 Ollama |
+| 数据引擎 | DuckDB | 嵌入式无服务，read_csv_auto 直接查 CSV，与 Milvus Lite 同思路 |
 | 后端 | FastAPI | 异步、现代，Flask 可平滑迁移 |
 
 详见 [docs/architecture.md](docs/architecture.md)。
@@ -97,13 +109,13 @@ python -m app.eval.metrics --answers   # 需要 LLM_API_KEY
 
 - **检索层**：`data/eval_set.json`（8 篇文档 14 条查询）上对比 dense / sparse / hybrid 的 hit@k、MRR。
 - **答案层**：忠实度由 verify 节点以 LLM-judge 判定（supported/partial/unsupported）；引用有效性抓「引用了不存在的文档」这类幻觉；语义相似度 + 词重叠 F1 是**对固定参考答案打分的确定性指标**，可复现、能进回归。
-- **单元测试**：`pytest tests -q`（40 个用例，含节点 LLM mock），push / PR 由 GitHub Actions 自动跑（CI 只跑单测，评估脚本因需下载模型 / LLM key 保持本地）。
+- **单元测试**：`pytest tests -q`（84 个用例，含节点 LLM mock），push / PR 由 GitHub Actions 自动跑（CI 只跑单测，评估脚本因需下载模型 / LLM key 保持本地）。
 
 ## 路线图
 
 - **P1**（已实现）基础 RAG 跑通
 - **P2**（已实现）LangGraph Agent：检索 → 相关性判断 → query 改写重查 → 带引用生成
-- **P3** 长期记忆 + MCP server
+- **P3**（部分完成）短期记忆 + MCP server 已实现；长期记忆待做
 - **P4** 评估已落地（检索 + 答案层），待补：纯 RAG vs RAG+Agent 对比实验、Docker 端到端验证
 
 ## 面试能讲的难点
@@ -113,3 +125,5 @@ python -m app.eval.metrics --answers   # 需要 LLM_API_KEY
 3. 引用如何对齐到原文 chunk，避免大模型幻觉？（chunk 级引用）
 4. 怎么判断「回答是否忠实于上下文、是否编造」？（verify 节点忠实度校验，输出 supported/partial/unsupported）
 5. 怎么量化评估？检索层 hit@k/MRR 对比三种召回；答案层忠实度 + 引用有效性 + 语义相似度（对固定参考答案打分，可复现、上 CI）
+6. 自然语言数据分析的 Agent 怎么防 SQL 生成幻觉？先 list_tables 看 schema、SQL 只读校验（SELECT 白名单 + 危险关键词拦截 + 行数上限）、结果可回查
+7. 指标口径歧义怎么澄清？「销售额」是否含税、季度怎么划分——用指标口径文档做 RAG，Agent 算之前先 search 口径

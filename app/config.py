@@ -21,6 +21,12 @@ class Settings:
     milvus_uri: str = os.getenv("MILVUS_URI", "./data/milvus.db")
     collection_name: str = os.getenv("COLLECTION_NAME", "doc_agent")
 
+    # ---- 入库（/ingest 只允许读该目录内文件，防路径穿越）----
+    docs_dir: str = os.getenv("DOCS_DIR", "./data")
+
+    # ---- 数据分析（DuckDB 只读查询的 CSV 数据源）----
+    sales_csv: str = os.getenv("SALES_CSV", "./data/sales.csv")
+
     # ---- 检索 ----
     top_k: int = int(os.getenv("TOP_K", "6"))
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "512"))
@@ -34,11 +40,24 @@ class Settings:
     # ---- Agent 改写（语义漂移门控）----
     rewrite_min_similarity: float = float(os.getenv("REWRITE_MIN_SIMILARITY", "0.5"))
 
+    # ---- 短期记忆 ----
+    memory_backend: str = os.getenv("MEMORY_BACKEND", "memory")  # memory | redis
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    memory_ttl: int = int(os.getenv("MEMORY_TTL", "3600"))  # 秒，默认 1 小时
+
 
 settings = Settings()
 
 
 def resolve_model(name: str) -> str:
-    """优先用 ModelScope 本地缓存加载模型（国内可离线），否则回退 HF 模型 ID。"""
-    local = Path.home() / ".cache" / "modelscope" / "models" / name.replace("/", "--") / "snapshots" / "master"
-    return str(local) if (local / "config.json").exists() else name
+    """优先用 ModelScope 本地缓存加载模型（国内可离线），否则回退 HF 模型 ID。
+
+    ModelScope 快照目录名通常是版本哈希而非固定 "master"，故遍历 snapshots/ 下
+    任意子目录，取第一个含 config.json 的（字典序，结果确定）。
+    """
+    base = Path.home() / ".cache" / "modelscope" / "models" / name.replace("/", "--") / "snapshots"
+    if base.is_dir():
+        for snap in sorted(base.iterdir()):
+            if (snap / "config.json").exists():
+                return str(snap)
+    return name
