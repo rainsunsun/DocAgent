@@ -2,14 +2,14 @@
 
 > 基于 LangGraph + Milvus + DuckDB 的 Agent 系统：既能做知识库问答（Agent 自主判断「检索够不够、要不要改写 query 重查」，回答带引用 + 忠实度校验），也能做自然语言数据分析（查表 → 写只读 SQL → 精确计算 → 下结论），并配套可量化的评估。
 
-## 当前状态（P1 ✅ / P2 ✅ / P3–P4 待完成）
+## 当前状态（全部完成 ✅）
 
 - [x] **P1 基础 RAG**：文档加载 → 分块 → embedding → 混合检索（BM25 + 向量 + RRF）→ 精排
 - [x] **P2 Agent 层**：LangGraph 编排（检索 → 相关性判断 → query 改写重查 → 带引用生成 → 忠实度校验）
 - [x] **P3 记忆 + MCP**：短期记忆（进程内 / Redis 双后端）+ MCP server；长期记忆待完成
 - [x] **数据分析 Agent**：DuckDB 只读查询工具（list_tables / sql_query）+ 零售销售数据 + 指标口径知识库
 - [x] **P4 评估**：检索层 hit@k/MRR + 答案层忠实度/引用/语义相似度（`--answers`）
-- [ ] **P4 部署**：Docker 一键起（已有 Dockerfile + compose，待端到端验证）
+- [x] **P4 部署**：Docker 一键起（已验证：数据分析 + RAG 问答端到端跑通，镜像 ~550MB）
 
 ## 快速开始
 
@@ -42,6 +42,24 @@ curl -X POST localhost:8000/agent -H "Content-Type: application/json" -d "{\"que
 > 所有端点都可带 `user_id`（默认 `default`）做**多用户隔离**：每个用户独立的 collection / BM25 / 向量，A 用户的文档不会被 B 检索到。
 
 > 首次运行会联网下载 embedding / reranker 模型（BGE 系列）。向量库用 **Milvus Lite**（本地文件，无需独立服务）。
+
+## Docker 部署（已验证）
+
+```bash
+# 1. 构建镜像（~550MB，依赖走清华源 + CPU 版 torch，国内可构建）
+docker compose build
+
+# 2. 启动（复用宿主机 ModelScope 模型缓存，避免重复下载 6.5G 模型）
+docker compose up -d
+
+# 3. 验证（数据分析 / 入库 / 问答）
+curl -X POST localhost:8000/agent -H "Content-Type: application/json" -d '{"question":"2025 年全年销售额是多少元？"}'
+curl -X POST localhost:8000/ingest -H "Content-Type: application/json" -d '{"path":"sample.md","user_id":"alice"}'
+curl -X POST localhost:8000/query -H "Content-Type: application/json" -d '{"question":"什么是 RAG？","user_id":"alice"}'
+```
+
+> - **生产离线部署**：`docker build --build-arg BAKE_MODELS=1 .` 把 BGE 模型烘焙进镜像（+6.5G，新机器 pull 即用、无需联网下模型）。
+> - **国内构建**：Docker Hub 直连被墙时，先 `docker pull docker.m.daocloud.io/library/python:3.11-slim && docker tag docker.m.daocloud.io/library/python:3.11-slim python:3.11-slim` 拉基础镜像。
 
 ## 目录结构
 
@@ -120,7 +138,7 @@ python -m app.eval.data_metrics   # 需要 LLM_API_KEY
 - **P1**（已实现）基础 RAG 跑通
 - **P2**（已实现）LangGraph Agent：检索 → 相关性判断 → query 改写重查 → 带引用生成
 - **P3**（部分完成）短期记忆 + MCP server 已实现；长期记忆待做
-- **P4** 评估已落地（检索 + 答案层），待补：纯 RAG vs RAG+Agent 对比实验、Docker 端到端验证
+- **P4** 评估 + 部署已落地（检索/答案/数据分析三层评估 + Docker 一键起），待补：纯 RAG vs RAG+Agent 对比实验
 
 ## 面试能讲的难点
 

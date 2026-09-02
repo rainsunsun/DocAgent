@@ -8,6 +8,9 @@ services:
       - MILVUS_URI=./data/milvus.db
     volumes:
       - ./data:/app/data
+      # 复用宿主机 ModelScope 模型缓存（bge-m3 / reranker 共 ~6.5G），
+      # 避免容器运行时重复联网下载。生产离线部署改用 BAKE_MODELS=1 烘焙进镜像。
+      - ${MODELSCOPE_CACHE:-~/.cache/modelscope}:/root/.cache/modelscope
 
   # P2+ 生产化：可换成独立 Milvus / Elasticsearch 服务
   # milvus:
