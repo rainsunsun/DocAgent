@@ -80,6 +80,41 @@ class HybridRetriever:
 
                 self._vectors = np.asarray(vectors, dtype="float32")
 
+    def add(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
+        """增量追加 chunk：不重建既有数据（向量只插新增行，BM25 需整体重拟合）。
+
+        仅支持 append-only（调用方保证不删除中间块）；删除走 reset + index 全量重建。
+        """
+        if not chunks:
+            return
+        with self._lock:
+            start = len(self._chunks)
+            self._chunks.extend(chunks)
+            # BM25Okapi 无增量 API，需用完整语料重拟合（纯词频统计，代价远低于 embedding/建索引）
+            self._bm25 = BM25Okapi([tokenize(c.text) for c in self._chunks])
+            if self._use_milvus:
+                self._ensure_collection(len(vectors[0]))
+                rows = [
+                    {
+                        "id": start + i,
+                        "vector": vectors[i],
+                        "text": c.text,
+                        "source": c.source,
+                        "chunk_index": c.chunk_index,
+                    }
+                    for i, c in enumerate(chunks)
+                ]
+                self.client.insert(collection_name=self.collection, data=rows)
+            else:
+                import numpy as np
+
+                new = np.asarray(vectors, dtype="float32")
+                self._vectors = (
+                    np.concatenate([self._vectors, new], axis=0)
+                    if self._vectors is not None
+                    else new
+                )
+
     def reset(self) -> None:
         """清空向量库，便于重复评测时保持 doc id 对齐。"""
         with self._lock:

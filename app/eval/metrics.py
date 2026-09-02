@@ -36,6 +36,14 @@ def mrr(ranks: list[int]) -> float:
     return sum(1.0 / r for r in ranks if r > 0) / len(ranks)
 
 
+def _map_to_chunk_ids(scored_by_index: dict[int, float], chunks: list[Chunk]) -> dict[int, float]:
+    """把「数组下标 -> 分数」映射为「chunk_index(=doc id) -> 分数」，与 hybrid 口径一致。
+
+    若不映射，dense/sparse 用数组下标去对 relevant（doc id）比较，遇到 doc id 非
+    0..n-1 顺序时就会算错。"""
+    return {chunks[i].chunk_index: s for i, s in scored_by_index.items()}
+
+
 def evaluate(set_path: str | Path, top_k: int = 5) -> dict:
     data = json.loads(Path(set_path).read_text(encoding="utf-8"))
     docs, queries = data["docs"], data["queries"]
@@ -55,9 +63,9 @@ def evaluate(set_path: str | Path, top_k: int = 5) -> dict:
         for q in queries:
             qv = embed_texts([q["query"]], settings.embedding_model)[0]
             if mode == "dense":
-                scored = ret._dense(qv, top_k)
+                scored = _map_to_chunk_ids(ret._dense(qv, top_k), chunks)
             elif mode == "sparse":
-                scored = ret._sparse(q["query"], top_k)
+                scored = _map_to_chunk_ids(ret._sparse(q["query"], top_k), chunks)
             else:
                 scored = {d.chunk_index: d.score for d in ret.retrieve(q["query"], qv, top_k)}
             ranked_ids = [i for i, _ in sorted(scored.items(), key=lambda x: -x[1])]

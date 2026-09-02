@@ -48,14 +48,38 @@ def _rebuild_index(user_id: str) -> None:
         retriever.index(chunks, vectors)
 
 
+def _append_to_index(user_id: str, chunks: list[Chunk], vectors: list[list[float]]) -> None:
+    """只把新 chunk 增量追加进该用户的索引（不重建既有数据）。"""
+    _get_retriever(user_id).add(chunks, vectors)
+
+
+def _resolve_ingest_path(path: str) -> Path:
+    """把入库路径限制在 docs_dir 内，拒绝绝对越界与 .. 穿越（防任意文件读取）。"""
+    root = Path(settings.docs_dir).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    candidate = (root / path).resolve()
+    if not candidate.is_relative_to(root):
+        raise ValueError(f"非法路径（仅允许 {root} 目录内）：{path}")
+    if not candidate.is_file():
+        raise ValueError(f"文件不存在或不可读：{path}")
+    return candidate
+
+
 def ingest_document(user_id: str, path: str) -> int:
     """加载文档 -> 分块 -> embedding -> 追加到该用户语料，返回块数。"""
-    text = load_document(Path(path))
+    resolved = _resolve_ingest_path(path)
+    text = load_document(resolved)
     chunks = chunk_text(text, path, settings.chunk_size, settings.chunk_overlap)
     vectors = embed_texts([c.text for c in chunks], settings.embedding_model)
     with _lock:
-        _documents.setdefault(user_id, {})[path] = (chunks, vectors)
-        _rebuild_index(user_id)
+        docs = _documents.setdefault(user_id, {})
+        is_new = path not in docs
+        docs[path] = (chunks, vectors)
+        # 新文档走增量追加；重复入库同 source 走全量重建（需移除旧块）
+        if is_new:
+            _append_to_index(user_id, chunks, vectors)
+        else:
+            _rebuild_index(user_id)
     return len(chunks)
 
 
@@ -67,8 +91,13 @@ def ingest_chunks(
 ) -> int:
     """直接入库已分块/向量化的内容（供评估/测试用），返回块数。"""
     with _lock:
-        _documents.setdefault(user_id, {})[source] = (chunks, vectors)
-        _rebuild_index(user_id)
+        docs = _documents.setdefault(user_id, {})
+        is_new = source not in docs
+        docs[source] = (chunks, vectors)
+        if is_new:
+            _append_to_index(user_id, chunks, vectors)
+        else:
+            _rebuild_index(user_id)
     return len(chunks)
 
 
