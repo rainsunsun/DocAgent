@@ -97,7 +97,7 @@ doc-agent/
 
 ## 评估
 
-分两层，检索层免 LLM、答案层需 LLM：
+分三层：检索层免 LLM，答案层与数据分析层需 LLM（均手动本地跑）：
 
 ```bash
 # 检索层：纯向量 / 纯 BM25 / 混合 三种召回对比 hit@k / MRR
@@ -105,11 +105,15 @@ python -m app.eval.metrics
 
 # 答案层：完整 Agent 跑一遍，统计忠实度、引用有效性、语义相似度、词重叠 F1
 python -m app.eval.metrics --answers   # 需要 LLM_API_KEY
+
+# 数据分析层：8 道自然语言数据题跑 ReAct，答案数值与 ground truth 精确比对
+python -m app.eval.data_metrics   # 需要 LLM_API_KEY
 ```
 
 - **检索层**：`data/eval_set.json`（8 篇文档 14 条查询）上对比 dense / sparse / hybrid 的 hit@k、MRR。
 - **答案层**：忠实度由 verify 节点以 LLM-judge 判定（supported/partial/unsupported）；引用有效性抓「引用了不存在的文档」这类幻觉；语义相似度 + 词重叠 F1 是**对固定参考答案打分的确定性指标**，可复现、能进回归。
-- **单元测试**：`pytest tests -q`（84 个用例，含节点 LLM mock），push / PR 由 GitHub Actions 自动跑（CI 只跑单测，评估脚本因需下载模型 / LLM key 保持本地）。
+- **数据分析层**：`data/data_eval_set.json`（8 题：销售额/同比/环比/占比/排名/客单价/品类过滤）逐题跑 ReAct，答案数值与 DuckDB 算出的 ground truth 做**数值精确比对**（相对误差 1% 内），比文本相似度更严格、可复现。
+- **单元测试**：`pytest tests -q`（98 个用例，含节点 LLM mock），push / PR 由 GitHub Actions 自动跑（CI 只跑单测，评估脚本因需下载模型 / LLM key 保持本地）。
 
 ## 路线图
 
@@ -127,3 +131,4 @@ python -m app.eval.metrics --answers   # 需要 LLM_API_KEY
 5. 怎么量化评估？检索层 hit@k/MRR 对比三种召回；答案层忠实度 + 引用有效性 + 语义相似度（对固定参考答案打分，可复现、上 CI）
 6. 自然语言数据分析的 Agent 怎么防 SQL 生成幻觉？先 list_tables 看 schema、SQL 只读校验（SELECT 白名单 + 危险关键词拦截 + 行数上限）、结果可回查
 7. 指标口径歧义怎么澄清？「销售额」是否含税、季度怎么划分——用指标口径文档做 RAG，Agent 算之前先 search 口径
+8. 数据分析 Agent 怎么评估正确率？8 道自然语言数据题 + DuckDB 算 ground truth，答案数值精确比对（相对误差 1% 内），8/8 通过、可复现，比文本相似度更严格

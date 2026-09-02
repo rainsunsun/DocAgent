@@ -1,0 +1,60 @@
+{
+  "questions": [
+    {
+      "id": 1,
+      "question": "2025 年全年销售额是多少元？",
+      "sql": "SELECT ROUND(SUM(amount),2) FROM sales WHERE year(order_date)=2025",
+      "expected": 722514.03,
+      "kind": "number"
+    },
+    {
+      "id": 2,
+      "question": "2025 年销售额相比 2024 年同比变化了多少？",
+      "sql": "SELECT ROUND((SUM(CASE WHEN year(order_date)=2025 THEN amount END)/SUM(CASE WHEN year(order_date)=2024 THEN amount END)-1),4) FROM sales",
+      "expected": -0.1396,
+      "kind": "pct"
+    },
+    {
+      "id": 3,
+      "question": "2025 年全年总销量是多少件？",
+      "sql": "SELECT SUM(quantity) FROM sales WHERE year(order_date)=2025",
+      "expected": 591,
+      "kind": "number"
+    },
+    {
+      "id": 4,
+      "question": "2025 年客单价是多少元？",
+      "sql": "SELECT ROUND(SUM(amount)/COUNT(DISTINCT order_id),2) FROM sales WHERE year(order_date)=2025",
+      "expected": 3782.8,
+      "kind": "number"
+    },
+    {
+      "id": 5,
+      "question": "2025 年华东区销售额占总销售额的比例是多少？",
+      "sql": "SELECT ROUND(SUM(CASE WHEN region='华东' AND year(order_date)=2025 THEN amount END)/SUM(CASE WHEN year(order_date)=2025 THEN amount END),4) FROM sales",
+      "expected": 0.2795,
+      "kind": "pct"
+    },
+    {
+      "id": 6,
+      "question": "2025 年销售额最高的地区是哪个？",
+      "sql": "SELECT region FROM sales WHERE year(order_date)=2025 GROUP BY region ORDER BY SUM(amount) DESC LIMIT 1",
+      "expected": "华东",
+      "kind": "text"
+    },
+    {
+      "id": 7,
+      "question": "2025 年 3C数码 品类的销售额是多少元？",
+      "sql": "SELECT ROUND(SUM(amount),2) FROM sales WHERE category='3C数码' AND year(order_date)=2025",
+      "expected": 384910.81,
+      "kind": "number"
+    },
+    {
+      "id": 8,
+      "question": "2025 年第二季度销售额相比第一季度环比变化了多少？",
+      "sql": "SELECT ROUND((SUM(CASE WHEN quarter(order_date)=2 AND year(order_date)=2025 THEN amount END)/SUM(CASE WHEN quarter(order_date)=1 AND year(order_date)=2025 THEN amount END)-1),4) FROM sales",
+      "expected": -0.2341,
+      "kind": "pct"
+    }
+  ]
+}
