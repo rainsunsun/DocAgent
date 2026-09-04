@@ -140,13 +140,4 @@ python -m app.eval.data_metrics   # 需要 LLM_API_KEY
 - **P3**（部分完成）短期记忆 + MCP server 已实现；长期记忆待做
 - **P4** 评估 + 部署已落地（检索/答案/数据分析三层评估 + Docker 一键起），待补：纯 RAG vs RAG+Agent 对比实验
 
-## 面试能讲的难点
 
-1. 混合检索为什么比纯向量好？RRF 是怎么无参数融合两种排序的？
-2. Agent 怎么决定「检索结果够不够，要不要改写 query 重查」？（grade 节点自省回路）
-3. 引用如何对齐到原文 chunk，避免大模型幻觉？（chunk 级引用）
-4. 怎么判断「回答是否忠实于上下文、是否编造」？（verify 节点忠实度校验，输出 supported/partial/unsupported）
-5. 怎么量化评估？检索层 hit@k/MRR 对比三种召回；答案层忠实度 + 引用有效性 + 语义相似度（对固定参考答案打分，可复现、上 CI）
-6. 自然语言数据分析的 Agent 怎么防 SQL 生成幻觉？先 list_tables 看 schema、SQL 只读校验（SELECT 白名单 + 危险关键词拦截 + 行数上限）、结果可回查
-7. 指标口径歧义怎么澄清？「销售额」是否含税、季度怎么划分——用指标口径文档做 RAG，Agent 算之前先 search 口径
-8. 数据分析 Agent 怎么评估正确率？8 道自然语言数据题 + DuckDB 算 ground truth，答案数值精确比对（相对误差 1% 内），8/8 通过、可复现，比文本相似度更严格
