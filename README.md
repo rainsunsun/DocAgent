@@ -1,4 +1,4 @@
-# DocAgent — Agent RAG 问答 + 自然语言数据分析系统
+# DocMind — Agent RAG 问答 + 自然语言数据分析系统
 
 > 基于 LangGraph + Milvus + DuckDB 的 Agent 系统：既能做知识库问答（Agent 自主判断「检索够不够、要不要改写 query 重查」，回答带引用 + 忠实度校验），也能做自然语言数据分析（查表 → 写只读 SQL → 精确计算 → 下结论），并配套可量化的评估。
 
